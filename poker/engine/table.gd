@@ -232,7 +232,10 @@ func _showdown() -> void:
         i = _next(i, _in_hand)
     event.emit({type = "showdown", order = order, scores = scores})
 
-    for p in _build_pots():
+    _return_uncalled()
+    var pots := _build_pots()
+    for n in pots.size():
+        var p: Dictionary = pots[n]
         var best: int = p.eligible.map(func(e): return scores[e]).max()
         # Winners in seat order from the button's left, so odd chips go there first.
         var winners := []
@@ -247,7 +250,8 @@ func _showdown() -> void:
         for k in winners.size():
             var won: int = share + (1 if k < odd else 0)
             seats[winners[k]].stack += won
-            event.emit({type = "pot_award", seat = winners[k], amount = won})
+            event.emit({type = "pot_award", seat = winners[k], amount = won, pot = n, pots = pots.size(),
+                    score = best, split = winners.size() > 1})
     _finish()
 
 
@@ -280,11 +284,33 @@ func _build_pots() -> Array:
 
 
 func _award_uncontested() -> void:
+    _return_uncalled()
     var w := _next(-1, _in_hand)
     var amount := pot()
     seats[w].stack += amount
-    event.emit({type = "pot_award", seat = w, amount = amount, uncontested = true})
+    event.emit({type = "pot_award", seat = w, amount = amount, uncontested = true, pot = 0, pots = 1})
     _finish()
+
+
+## The part of the biggest bet nobody else matched goes back to its owner before the pots are paid.
+func _return_uncalled() -> void:
+    var top := -1
+    var second := 0
+    for i in MAX_SEATS:
+        var s: Seat = seats[i]
+        if s == null:
+            continue
+        if top == -1 or s.total > seats[top].total:
+            if top != -1:
+                second = maxi(second, seats[top].total)
+            top = i
+        else:
+            second = maxi(second, s.total)
+    var extra: int = seats[top].total - second if top != -1 else 0
+    if extra > 0:
+        seats[top].total -= extra
+        seats[top].stack += extra
+        event.emit({type = "returned", seat = top, amount = extra})
 
 
 func _finish() -> void:

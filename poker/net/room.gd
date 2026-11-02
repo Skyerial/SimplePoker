@@ -37,6 +37,9 @@ var bank := {}  # seat -> time bank seconds left
 var busted := []  # seats in the order they went out (tournament)
 var revealed := {}
 var last_action := {}
+var results := []  ## this hand's wins as [seat, text]; each winner sees their own on the table
+var won := {}  # seat -> chips won this hand
+var pot_logged := false
 var last_emote := {}  # peer -> msec
 var deadline := 0  # msec when the player to act times out, 0 for none
 var turn_start := 0
@@ -143,7 +146,7 @@ func _view_for(peer: int) -> Dictionary:
 		seats = seats, me = me, button = table.button, sb = table.sb_seat, bb = table.bb_seat, to_act = table.to_act,
 		board = table.board.duplicate(), pot = table.pot(), current_bet = table.current_bet,
 		hand_running = table.hand_running, blinds = _blinds_text(), status = _status(peer),
-		can_start = peer == host and not started, can_rebuy = false, buy_in = settings.stack, hint = "", legal = {},
+		results = results.filter(func(r): return r[0] == me).map(func(r): return r[1]), can_start = peer == host and not started, can_rebuy = false, buy_in = settings.stack, hint = "", legal = {},
 		time_left = (deadline - Time.get_ticks_msec()) / 1000.0 if deadline > 0 else 0.0,
 	}
 	if me >= 0:
@@ -351,6 +354,9 @@ func _on_event(e: Dictionary) -> void:
 		"hand_start":
 			revealed.clear()
 			last_action.clear()
+			results.clear()
+			pot_logged = false
+			won.clear()
 			for seat in bank:
 				bank[seat] = minf(TIME_BANK, bank[seat] + BANK_REFILL)
 			_log("\n[b]Hand #%d[/b] · %s" % [e.hand, _blinds_text()])
@@ -372,14 +378,46 @@ func _on_event(e: Dictionary) -> void:
 				revealed[seat] = true
 				var s = table.seats[seat]
 				_log("%s shows %s (%s)" % [s.name, " ".join(s.hole.map(Cards.to_str)), Cards.describe(e.scores[seat])])
+		"returned":
+			_log_pot()
+			_log("[color=#f0c040]%s gets %d back (uncalled bet)[/color]" % [table.seats[e.seat].name, e.amount])
+			if not won.has(e.seat):
+				last_action[e.seat] = "gets %d back" % e.amount
 		"pot_award":
-			_log("[color=#f0c040]%s wins %d[/color]" % [table.seats[e.seat].name, e.amount])
+			won[e.seat] = won.get(e.seat, 0) + e.amount
+			last_action[e.seat] = "wins %d" % won[e.seat]
+			_log_pot()
+			var text := _award_text(e)
+			results.append([e.seat, text])
+			_log("[color=#f0c040]%s[/color]" % text)
 		"hand_end":
 			deadline = 0
 			_record_busts()
 			_save_stacks()
 			get_tree().create_timer(NEXT_HAND_DELAY).timeout.connect(_next_hand)
 	_mark_dirty()
+
+
+## Logs the pot once, before the first payout. Uncalled chips are already back out of it.
+func _log_pot() -> void:
+	if not pot_logged:
+		pot_logged = true
+		_log("[b]Total pot %d[/b]" % table.pot())
+
+
+func _award_text(e: Dictionary) -> String:
+	var who: String = table.seats[e.seat].name
+	if e.get("uncontested"):
+		return "%s wins %d, everyone else folded" % [who, e.amount]
+	var pot := "the pot"
+	if e.pots > 1:
+		pot = "the main pot" if e.pot == 0 else ("the side pot" if e.pots == 2 else "side pot %d" % e.pot)
+	var verb := "splits %s and gets" % pot if e.split else "wins"
+	var from := "" if e.split else " from %s" % pot
+	var hand := Cards.describe(e.score).to_lower()
+	if not hand.get_slice(" ", 0) in ["high", "two", "three", "four"]:
+		hand = "a " + hand
+	return "%s %s %d%s with %s" % [who, verb, e.amount, from, hand]
 
 
 ## Snapshot of every cash stack, so a crash only loses the hand in progress.

@@ -83,6 +83,13 @@ func test_uncontested() -> void:
 	t.act(0, "fold")
 	t.act(1, "fold")
 	check(not t.hand_running and t.seats[2].stack == 1010 and t.seats[1].stack == 990, "big blind wins when everyone folds")
+	var paid := []
+	t.event.connect(func(e): if e.type in ["pot_award", "returned"]: paid.append([e.type, e.seat, e.amount]))
+	t.start_hand()  # button 1, SB 2, BB 0
+	t.act(1, "raise", 100)
+	t.act(2, "fold")
+	t.act(0, "fold")
+	check(paid == [["returned", 1, 80], ["pot_award", 1, 50]], "uncalled part of a raise comes back: got %s" % [paid])
 
 
 func test_side_pots() -> void:
@@ -91,13 +98,18 @@ func test_side_pots() -> void:
 	t.sit(1, "Kings", 300)
 	t.sit(2, "Queens", 1000)
 	# Dealt from seat 1: 1, 2, 0, 1, 2, 0, then burn + flop, burn + turn, burn + river.
+	var paid := []
+	t.event.connect(func(e): if e.type in ["pot_award", "returned"]: paid.append([e.type, e.seat, e.amount]))
 	t.start_hand(Cards.parse_many("Ks Qs As Kh Qh Ah 4c 2c 7d 9s 4d Jc 4h 3d"))
 	t.act(0, "raise", 100)  # all-in
-	t.act(1, "raise", 300)  # all-in
-	t.act(2, "call")
+	t.act(1, "call")
+	t.act(2, "raise", 600)
+	t.act(1, "call")  # all-in for 300 total, so 300 of the raise is unmatched
 	check(not t.hand_running, "all-in hand runs out to showdown")
 	var stacks := t.seats.slice(0, 3).map(func(s): return s.stack)
 	check(stacks == [300, 400, 700], "main pot to aces, side pot to kings: got %s" % [stacks])
+	check(paid == [["returned", 2, 300], ["pot_award", 0, 300], ["pot_award", 1, 400]],
+			"queens' uncalled 300 comes back, not as a pot win: got %s" % [paid])
 
 
 func test_bot_marathon() -> void:

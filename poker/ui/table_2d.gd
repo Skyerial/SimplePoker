@@ -31,6 +31,7 @@ var pot_chips: ChipStack
 var board_cards: HBoxContainer
 var hint_label: Label
 var status_label: Label
+var results_label: Label  ## who won what, between hands
 var start_btn: Button
 var rebuy_btn: Button
 var log_box: RichTextLabel
@@ -114,6 +115,8 @@ func _refresh() -> void:
     status_label.text = v.get("status", "")
     hint_label.visible = hint_label.text != ""  # empty labels still take up a line
     status_label.visible = status_label.text != ""
+    results_label.text = "\n".join(v.get("results", []))
+    results_label.visible = results_label.text != ""
     start_btn.visible = v.get("can_start", false)
     rebuy_btn.visible = v.get("can_rebuy", false)
     rebuy_btn.text = "Out of chips: rebuy %d" % v.get("buy_in", 0)
@@ -362,6 +365,11 @@ func _build_ui() -> void:
     board_cards.custom_minimum_size.y = BOARD_CARD.y  # keeps the layout still before the flop
     hint_label = Label.new()
     status_label = Label.new()
+    results_label = Label.new()
+    results_label.add_theme_color_override("font_color", Color("ffd166"))
+    results_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+    results_label.add_theme_constant_override("outline_size", 4)
+    results_label.add_theme_font_size_override("font_size", 18)
     start_btn = Button.new()
     start_btn.text = "Start"
     start_btn.pressed.connect(Game.start_game)
@@ -373,7 +381,7 @@ func _build_ui() -> void:
     pot_row.add_child(pot_label)
     pot_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
     pot_label.size_flags_vertical = Control.SIZE_FILL
-    for n in [pot_row, board_cards, hint_label, status_label, start_btn, rebuy_btn]:
+    for n in [pot_row, board_cards, results_label, hint_label, status_label, start_btn, rebuy_btn]:
         if n is Label:
             n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         center.add_child(n)
