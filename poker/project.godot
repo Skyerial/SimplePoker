@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="Poker"
-run/main_scene="res://ui/table_2d.tscn"
+run/main_scene="res://ui/lobby.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
+
+[autoload]
+
+Game="*res://net/game.gd"
 
 [dotnet]
 

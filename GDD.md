@@ -1,10 +1,10 @@
 # Poker Game — Game Design Document
 
-Last updated: 2026-10-28 · [Online version](https://claude.ai/artifact/FaTpfDN57VWJEVrPA2vPyp) (has the roadmap diagram; this file is the main copy)
+Last updated: 2026-11-01 · [Online version](https://claude.ai/artifact/FaTpfDN57VWJEVrPA2vPyp) (has the roadmap diagram, but hasn't been updated since 2026-10-28; this file is the main copy)
 
 ## Overview
 
-A social No-Limit Texas Hold'em game where joining a friend's table always works. It ships on PC through Steam first and keeps the game logic separate so a mobile version can follow.
+A social No-Limit Texas Hold'em game where joining a friend's table always works. It ships on PC first, with accounts and tables on our own server, and keeps the game logic separate so a mobile version can follow.
 
 **Why it exists:** the poker game we play now regularly fails to let us join a friend's table. This game makes "join friend" a first-class, one-click feature.
 
@@ -18,15 +18,15 @@ A social No-Limit Texas Hold'em game where joining a friend's table always works
 
 ## Platforms & tech
 
-It's built in Godot 4 with GDScript and ships on Windows through Steam first. Mobile (Android/iOS) comes later and reuses the same game logic with a 2D view.
+It's built in Godot 4 with GDScript and ships on Windows first. Players log in to our own game server, which is self-hosted on a home PC for now and moves to a rented server later. Mobile (Android/iOS) comes later and reuses the same game logic with a 2D view.
 
 | Layer | What it is | Notes |
 | --- | --- | --- |
 | Rules engine | Pure GDScript: deck, hand evaluator, betting state machine | No nodes, no rendering. Unit-tested. Runs on whoever is the authority. |
-| Table authority | Runs the engine, deals, validates every action | On the host in P2P. Later it can run unchanged on a headless dedicated server. |
-| Transport | Godot `MultiplayerPeer` | ENet (direct IP) in the MVP, then a Steam peer via GodotSteam. Same RPC code for both. |
+| Table authority | Runs the engine, deals, validates every action | On the game server (headless Godot, same code). Offline games against bots run it locally. |
+| Transport | Godot `MultiplayerPeer` | ENet. Clients connect to the server's address on one UDP port. |
 | Views | 2D table scene, 3D table scene | Both listen to the same table events. Choose in settings. Mobile uses 2D. |
-| Profile/save | Bankroll, cosmetics, stats | Local save in the P2P phase, synced via Steam Cloud if we go with Steam. Moves to a server when real money is involved. |
+| Accounts & save | Login, bankroll, cosmetics, stats | Stored on the game server, so chips persist between sessions and can't be edited locally. |
 
 The split matters for two reasons. The 2D and 3D views share every line of rules code, and a dedicated server later is a deployment change, not a rewrite.
 
@@ -112,7 +112,7 @@ Progression is your chip bankroll. Chips come in through play, the daily bonus, 
 
 **Stats shown on the profile:** level, hands played, biggest pot, tournament wins, highest venue reached, and earned titles and badges.
 
-In the P2P phase the bankroll lives in a local save, so a determined player could edit it. That's acceptable among friends and gets fixed when the economy moves to a server.
+The bankroll lives on the game server with the player's account. The client only displays it, so editing local files can't create chips.
 
 ## AI bots
 
@@ -142,35 +142,22 @@ When a human leaves a bot-filled table, the bot that replaces them gets a fresh 
 
 ## Multiplayer & networking
 
-One player's game acts as the table authority. It runs the rules engine, shuffles, deals, and checks every action. Other players' games only send intents ("raise 400") and draw the events they receive.
+The game server is the table authority. It runs the rules engine, shuffles, deals, and checks every action. Players' games only send intents ("raise 400") and draw the events they receive.
 
-**Hidden information:** the authority sends each player only their own hole cards. Other players' cards go out at showdown and only if shown. The host's machine still knows the deck, which is accepted among friends and fixed by a dedicated server later.
+**Hidden information:** the authority sends each player only their own hole cards. Other players' cards go out at showdown and only if shown. With the server as authority, no player's machine knows the deck. While the server runs on our own PC, whoever runs it could in theory read it, which is accepted among friends.
 
-**Phase 1 — MVP, no Steam (ENet direct connect)**
+**Phase 1 — direct connect (done, replaced by the server).** One player hosted and friends joined by IP. The server does the same job for LAN and internet play, so it was removed.
 
-- The host clicks "Host table" and shares their IP and port. Friends click "Join" and enter it.
-- Over the internet the host forwards one UDP port, or the group uses a virtual LAN (Tailscale, ZeroTier).
-- There's no public lobby browser yet, since that needs a matchmaking service.
+**Phase 2 — own game server (MVP)**
 
-**Phase 2 — Steam**
+- The same Godot project runs as the server with `-- --server` (`server.bat` starts it headless). Each table is a `TableRoom` (`net/room.gd`), and the server runs up to 20 at once.
+- **Self-hosted for now:** it runs on our own PC with one UDP port forwarded. Players connect to a fixed address or a dynamic-DNS name, so it keeps working when the home IP changes. Moving to a rented server later only changes that address.
+- **Accounts:** players register and log in with a username and password. Passwords are stored hashed (never as plain text), and the whole connection is encrypted (DTLS on ENet). The server makes a self-signed certificate on first start; copying its `server.crt` into the project folder lets clients check they reached the real server.
+- **Persistent bankroll:** each account's chips, stats and cosmetics live on the server and are saved after every hand, so a crash or restart loses nothing. Cash-table buy-ins come out of the bankroll, and standing up puts the stack back. Everything is stored in one `accounts.json` on the server. Tournaments are free to enter until entry fees arrive in milestone 4.
+- **Lobby:** after login, players see the server's table list. They can create a table (cash or tournament, with the host settings) or join one. Joining a full table or a running tournament watches it. Friends find each other through that list.
+- **Backups:** the server copies `accounts.json` into a `backups` folder on every start. Copying that folder off the server PC now and then is still on us.
 
-- Steam Matchmaking lobbies: public (listed in the in-game browser), friends-only, and invite-only.
-- "Join Game" from the Steam friends list drops you straight into a friend's table, or into spectator mode if it's full.
-- Steam's relay network carries traffic, so no port forwarding is needed. Same RPC code, with only the `MultiplayerPeer` swapped.
-
-**Host migration**
-
-- Every player always holds the public table state: seats, stacks, button, blinds, blind level, and tournament clock.
-- The successor is decided ahead of time: the human who has been seated longest. Everyone already agrees on who it is.
-- **The host is invisible to players.** Nobody clicks "Host". Players just create and join tables, and the host role works behind the scenes.
-- **Host leaves the table:** the host is marked "leaving after this hand" and their cards auto-fold. Their game keeps running the table in the background (they can already browse the lobby) until the hand ends, then hands over between hands. Nothing is voided.
-- **Host quits the game:** the close request is intercepted (Godot `NOTIFICATION_WM_CLOSE_REQUEST`), the window minimizes and mutes, and the game keeps running until the hand is finished and handed over, then exits. A tray/taskbar "Quit now" option forces it. Hard cap: about 2 minutes.
-- **Host's connection drops briefly:** the hand pauses for up to 30 s. If they come back, it resumes exactly where it was.
-- **Host crashes, is killed (Task Manager, power loss), or never comes back:** the only copy of the deck is gone, so that hand is voided and every player's bets in it are refunded. A new host can't take over a deck it never saw.
-- After handover the successor becomes the authority, the others reconnect to it, and the next hand deals.
-- Needs Steam's relay to work reliably. In phase 1 the successor usually isn't reachable, so phase 1 falls back to ending the table and returning all stacks (the graceful "finish the hand first" still applies).
-
-**Phase 3 — dedicated server (later)** runs the same authority code headless. It brings mobile cross-play, a cheat-proof economy, and multi-table tournaments.
+**Phase 3 — rented server (later)** runs the same server build in a data center. It brings better uptime, mobile cross-play and multi-table tournaments. Steam can still be added as a storefront later, with Steam login linked to accounts.
 
 ## Presentation
 
@@ -201,7 +188,7 @@ Social features stay light: text chat, emotes, spectating, and one-click joining
 - **Text chat:** a per-table chat box with player and spectator messages labeled. Mute per player, plus a basic profanity filter (toggle).
 - **Emotes:** a quick wheel of 8 reactions (nice hand, thinking, laugh, angry, GG…) that show as bubbles over the avatar. Rate-limited to 1 per 3 s. More packs unlock as cosmetics.
 - **Spectating:** see Game modes. Spectators show in a side list and can sit when a seat opens.
-- **Friends:** in the MVP, a recent-players list for quick reconnecting. From phase 2, Steam friends with status ("At Jazz club table") and Join/Spectate buttons.
+- **Friends:** in the MVP, players find each other in the server's table list. Later, a friends list on the account with status ("At Jazz club table") and Join/Spectate buttons.
 
 ## Monetization & legal
 
@@ -209,34 +196,59 @@ Real money buys cosmetics only. Chips can never be withdrawn, traded or gifted b
 
 - **Cosmetic purchases:** direct purchases of specific items (card backs, tables, avatars). No paid random rewards.
 - **Loot chests:** earned only, never bought, and no keys are sold either. The Dutch gambling regulator (Kansspelautoriteit) has acted against paid loot boxes, and Belgium bans them.
-- **Paid bailout (future):** selling chips makes this a "social casino" game. It's allowed on Steam, but before adding it: (1) move the bankroll to a server so bought chips can't be duplicated by editing saves, (2) check the age rating, since simulated gambling raises PEGI/ESRB ratings, and (3) check Steam's and the stores' current rules. Don't ship it without that review.
+- **Paid bailout (future):** selling chips makes this a "social casino" game. Before adding it: (1) the bankroll must run on a properly managed server, not a home PC, so bought chips are safe, (2) check the age rating, since simulated gambling raises PEGI/ESRB ratings, and (3) check Steam's and the stores' current rules. Don't ship it without that review.
 - **Chip transfers between players** are not allowed, because they would create a gray market for chips.
 
 This is design guidance, not legal advice. Get a proper check before any real-money feature goes live.
 
 ## Roadmap
 
-Every milestone ends with something playable. Milestones 1–2 are the MVP: Hold'em with bots and friends, no Steam needed.
+Every milestone ends with something playable. Milestones 1–3 are the MVP: Hold'em with bots and friends on our own server, with accounts.
 
-1. **Milestone 1 — Rules engine and 2D table vs bots** (MVP)
+1. **Milestone 1 — Rules engine and 2D table vs bots** (MVP, done)
    Deck, hand evaluator, betting and side pots with tests; 2D table; four bot archetypes at one difficulty.
-2. **Milestone 2 — Play with friends (ENet direct connect)** (MVP)
-   Host and join by IP, hidden cards, timer and disconnects, chat and emotes, Sit & Go and private tournaments.
-   - **MVP gate:** a full tournament with friends over the internet.
-3. **Milestone 3 — Bankroll and venues**
-   Local profile, 6 venue tiers with scaled bot difficulty, daily bonus, free chests, bailout, chip shop.
-   - **Decision gate:** after playtesting the MVP with friends and bots, choose Steam ($100 app fee) or our own hosted server.
-4. **Milestone 4 — Online platform (Steam or own server)**
-   Public, friends-only and invite lobbies; join friends; spectating; host migration (Steam) or server-run tables.
+2. **Milestone 2 — Play with friends (ENet direct connect)** (MVP, done)
+   Host and join by IP, hidden cards, timer and disconnects, chat and emotes, Sit & Go and private tournaments. Works over the internet.
+3. **Milestone 3 — Own game server and accounts** (MVP, in progress: server, accounts, bankroll and lobby are built; left: set up dynamic DNS, pin the certificate, run the MVP gate)
+   - Headless server build that runs the table authority, with several tables at once.
+   - Self-hosted on our own PC: port forward, fixed address or dynamic DNS, a start/stop script, and backups of the account data.
+   - Register and log in, with hashed passwords and an encrypted connection.
+   - Bankroll stored per account and saved after every hand. Cash buy-ins and cash-outs go through it. Starting bankroll 5,000.
+   - Lobby screen: log in or register, table list, create table, join (watch when full).
+   - **MVP gate:** friends log in from their own homes, play a cash session and a full tournament, and their chips are still there after the server restarts.
+4. **Milestone 4 — Bankroll and venues**
+   6 venue tiers with scaled bot difficulty, daily bonus, free chests, bailout, chip shop, levels and stats.
 5. **Milestone 5 — 3D view**
    Venue rooms, card peek, chip dragging, dealer animations; 2D stays selectable.
-6. **Later — Dedicated server**
-   Mobile cross-play, server-side economy, multi-table tournaments, real-money cosmetic store.
+6. **Later — Rented server**
+   Move the server off the home PC, mobile cross-play, multi-table tournaments, friends list, optional Steam storefront, real-money cosmetic store.
+
+## To do
+
+- [ ] Show who is small blind and big blind on the table, with a chip or marker like the dealer button.
+- [ ] Blinds stay fixed in cash games (only tournaments raise them).
+- [ ] Tweak tournament blind speeds (hands per level for Turbo/Normal/Slow, and the blind steps).
+- [ ] Bots need much more personality, and should drop their style when a hand is an obvious loss. Still to figure out how.
+- [ ] Bots take a short "thinking" delay before acting.
+- [ ] Try LLM-driven bots to make them less predictable (and maybe give them table chat). Open: cost per decision, response time vs the turn timer, and falling back to the normal bot when the LLM is slow or unavailable. Runs on the server so API keys never ship in the game.
+- [ ] Bots get their own bankroll: they rebuy from it when busted, and once it's empty they leave and a new bot takes the seat, so different bots cycle through the table. (Replaces "bots get a fresh stack from the house" in AI bots.)
+- [ ] Check and validate the winning logic (hand evaluation, showdown, pot and side-pot awards); it seems slightly wrong in play. Note the hands where it happens so they can become tests.
+- [ ] Show clearly who won how much and who only got uncalled chips back, and show the main pot and each side pot with their sizes on the table.
+- [ ] Session summary screen when you leave a table: your hands, what you won and lost in each, and the totals (hands played, total won, total lost, net result).
+- [ ] Find a way to check if someone cheated chips into their account (e.g. a log of every chip change, so a bankroll can be traced back).
 
 ## Open questions
 
 - [ ] Game name?
 - [ ] Exact XP curve, wealth milestone amounts and title names (tune in playtests).
+
+**Decided (2026-11-01)**
+
+- [x] Server storage: one JSON file, written safely after every hand. SQLite would need an add-on and isn't needed at friends scale.
+- [x] Direct connect is removed; the server covers LAN play too. Offline play against bots needs no account.
+
+- [x] Own game server instead of Steam. Self-hosted on our own PC for now, rented server later. It's part of the MVP.
+- [x] Accounts with a persistent bankroll on the server, so chips carry over between sessions.
 
 **Decided (2026-10-28)**
 
@@ -247,5 +259,5 @@ Every milestone ends with something playable. Milestones 1–2 are the MVP: Hold
 - [x] No run-it-twice or rabbit hunting.
 - [x] Art style: cartoony low-poly.
 - [x] Levels unlock badges and some cosmetics; wealth milestones give titles and badges.
-- [x] Profile syncs via Steam Cloud if we go with Steam.
-- [x] Steam vs own server is decided after MVP playtesting.
+- [x] ~~Profile syncs via Steam Cloud if we go with Steam.~~ Replaced: profiles live on our server.
+- [x] ~~Steam vs own server is decided after MVP playtesting.~~ Decided early: own server (2026-11-01).
