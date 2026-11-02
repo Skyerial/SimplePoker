@@ -138,9 +138,9 @@ func _view_for(peer: int) -> Dictionary:
 			note = "disconnected"
 		elif busted.has(i):
 			note = "out"
-		seats.append({name = s.name, stack = s.stack, cards = cards, in_hand = s.in_hand, note = note})
+		seats.append({name = s.name, stack = s.stack, cards = cards, in_hand = s.in_hand, bet = s.bet, note = note})
 	var v := {
-		seats = seats, me = me, button = table.button, to_act = table.to_act,
+		seats = seats, me = me, button = table.button, sb = table.sb_seat, bb = table.bb_seat, to_act = table.to_act,
 		board = table.board.duplicate(), pot = table.pot(), current_bet = table.current_bet,
 		hand_running = table.hand_running, blinds = _blinds_text(), status = _status(peer),
 		can_start = peer == host and not started, can_rebuy = false, buy_in = settings.stack, hint = "", legal = {},

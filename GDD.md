@@ -225,7 +225,7 @@ Every milestone ends with something playable. Milestones 1–3 are the MVP: Hold
 
 ## To do
 
-- [ ] Show who is small blind and big blind on the table, with a chip or marker like the dealer button.
+- [x] Show who is small blind and big blind on the table, with a chip or marker like the dealer button.
 - [ ] Blinds stay fixed in cash games (only tournaments raise them).
 - [ ] Tweak tournament blind speeds (hands per level for Turbo/Normal/Slow, and the blind steps).
 - [ ] Bots need much more personality, and should drop their style when a hand is an obvious loss. Still to figure out how.

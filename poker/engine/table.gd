@@ -16,7 +16,7 @@ class Seat:
     var hole := []
     var in_hand := false  ## dealt in and not folded
     var all_in := false
-    var bet := 0  ## chips put in on this street
+    var bet := 0  ## chips put in on this strdww deet
     var total := 0  ## chips put in this hand
     var acted := false  ## acted since the last full raise
 
@@ -31,6 +31,8 @@ var small_blind: int
 var big_blind: int
 var ante := 0  ## dead money from every player before the blinds (tournaments)
 var button := -1
+var sb_seat := -1
+var bb_seat := -1
 var board := []
 var street: int = Street.PREFLOP
 var to_act := -1
@@ -109,8 +111,8 @@ func start_hand(stacked := []) -> bool:
 
     button = _next(button, _in_hand)
     # Heads-up the button posts the small blind.
-    var sb_seat: int = button if players.size() == 2 else _next(button, _in_hand)
-    var bb_seat := _next(sb_seat, _in_hand)
+    sb_seat = button if players.size() == 2 else _next(button, _in_hand)
+    bb_seat = _next(sb_seat, _in_hand)
     if stacked:
         _deck = stacked.duplicate()
         _deck.reverse()

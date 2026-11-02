@@ -13,6 +13,7 @@ func _initialize() -> void:
 	test_bot_marathon()
 	test_antes()
 	test_accounts()
+	test_chip_breakdown()
 
 
 ## Node.multiplayer only exists once the tree runs, so the Game test waits for the first frame.
@@ -198,3 +199,15 @@ func test_cash_table_uses_bankroll() -> void:
 	check(a.chips("Sky") == 5000, "standing up returns the stack")
 	room.free()
 	DirAccess.remove_absolute(ACCOUNTS_FILE)
+
+
+func test_chip_breakdown() -> void:
+	for value in [0, 1, 7, 10, 20, 135, 1980, 2000, 7730, 123456]:
+		for spread in [false, true]:
+			var counts: Array = ChipStack.breakdown(value, spread)
+			var total := 0
+			for i in counts.size():
+				total += counts[i] * ChipStack.DENOMS[i][0]
+			check(total == value, "chips for %d (spread %s) add up, got %d" % [value, spread, total])
+	var stack: Array = ChipStack.breakdown(2000, true)
+	check(stack.slice(3).all(func(n): return n > 0), "a 2000 stack has some of every small chip: %s" % [stack])
