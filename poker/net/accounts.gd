@@ -6,6 +6,7 @@ extends RefCounted
 ## but the hand in progress.
 
 const START_CHIPS := 5000
+const MIN_CHIPS := 2000  ## bankroll plus table stacks never drops below this
 const HASH_ROUNDS := 20000
 const NAME_RULE := "^[A-Za-z0-9_]{3,16}$"
 
@@ -28,6 +29,7 @@ func _init(file: String) -> void:
 		for stack in a.at_table.values():
 			a.chips += int(stack)
 		a.at_table = {}
+		_floor(a)
 	save()
 
 
@@ -66,6 +68,7 @@ func chips(player_name: String) -> int:
 ## Moves chips from the bankroll to a table. False if they don't have enough.
 func buy_in(player_name: String, table: String, amount: int) -> bool:
 	var a = data[player_name.to_lower()]
+	_floor(a)
 	if a.chips < amount:
 		return false
 	a.chips -= amount
@@ -84,7 +87,16 @@ func settle(player_name: String, table: String) -> void:
 	var a = data[player_name.to_lower()]
 	a.chips += int(a.at_table.get(table, 0))
 	a.at_table.erase(table)
+	_floor(a)
 	save()
+
+
+# ponytail: free top-up to MIN_CHIPS whenever you're short; replace with a daily claim (see GDD To do).
+func _floor(a: Dictionary) -> void:
+	var total: int = a.chips
+	for stack in a.at_table.values():
+		total += int(stack)
+	a.chips += maxi(0, MIN_CHIPS - total)
 
 
 ## Writes a temp file first, so a crash mid-write can't corrupt the accounts.

@@ -7,7 +7,8 @@ extends Node
 
 signal send(peer: int, method: StringName, args: Array)
 
-const BOT_NAMES := ["Rosa", "Big Tony", "Mila", "Dex", "Hank"]
+const BOT_QUIT_CHANCE := 0.3  ## chance a bot leaves after losing half its stack or more in a hand (cash)
+const BOT_MAX_REBUYS := 3  ## a bot brings 0..this many extra buy-ins as its bankroll
 const EMOTES := ["Nice hand", "Hmm…", "Haha", "Grr", "GG", "Wow", "Oops", "Bluff?"]
 const BOT_DELAY := 0.7
 const NEXT_HAND_DELAY := 3.0
@@ -29,6 +30,7 @@ var started := false
 var finished := false
 var idle := true  ## no hand running and none scheduled
 var bots := {}  # seat -> PokerBot
+var bot_stacks := {}  # seat -> bot stack when the last hand started
 var peer_seat := {}  # peer id -> seat, -1 while watching
 var peer_names := {}  # peer id -> name
 var waiting := {}  # peer id -> name, sits down between hands (cash)
@@ -258,6 +260,7 @@ func _stand(seat: int) -> void:
 	away.erase(seat)
 	bank.erase(seat)
 	bots.erase(seat)
+	bot_stacks.erase(seat)
 	for peer in peer_seat:
 		if peer_seat[peer] == seat:
 			peer_seat[peer] = -1
@@ -273,8 +276,7 @@ func start_game() -> void:
 		return
 	var free := range(PokerTable.MAX_SEATS).filter(func(i): return table.seats[i] == null)
 	for k in mini(settings.bots, free.size()):
-		table.sit(free[k], BOT_NAMES[k], settings.stack, true)
-		bots[free[k]] = PokerBot.new(k % 4)
+		_add_bot(free[k])
 	if _alive().size() < 2:
 		_log("Need at least 2 players: add bots or wait for a friend")
 		return
@@ -452,10 +454,8 @@ func _next_hand() -> void:
 		for peer in waiting.keys():
 			_sit_human(peer, waiting[peer])
 			waiting.erase(peer)
-		for seat in bots:
-			if table.seats[seat].stack == 0:
-				table.seats[seat].stack = settings.stack  # bots get a fresh stack from the house
-				_log("%s rebuys" % table.seats[seat].name)
+		for seat in bots.keys():
+			_bot_after_hand(seat)
 	else:
 		if _alive().size() == 1:
 			finished = true
@@ -464,8 +464,54 @@ func _next_hand() -> void:
 			_mark_dirty()
 			return
 		_set_blind_level()
+	bot_stacks.clear()
+	for seat in bots:
+		var lost := 1.0 - float(table.seats[seat].stack) / maxi(1, _last_stack(seat))
+		bots[seat].new_hand(table.seats[seat].stack, table.big_blind, lost)
+		bot_stacks[seat] = table.seats[seat].stack
 	idle = not table.start_hand()
 	_mark_dirty()
+
+
+func _last_stack(seat: int) -> int:
+	return bot_stacks.get(seat, table.seats[seat].stack)
+
+
+## Seats a new bot whose skill matches the buy-in. Only call between hands.
+func _add_bot(seat: int, gone := "") -> void:
+	var taken := table.seats.filter(func(s): return s != null).map(func(s): return s.name) + [gone]
+	var free := PokerBot.CHARACTERS.filter(func(c): return not taken.has(c.name))
+	var who: Dictionary = free.pick_random() if not free.is_empty() else PokerBot.CHARACTERS.pick_random()
+	var bot := PokerBot.new(who, PokerBot.level_for(settings.stack))
+	bot.bankroll = settings.stack * randi_range(0, BOT_MAX_REBUYS)
+	table.sit(seat, who.name, settings.stack, true)
+	bots[seat] = bot
+	bot_stacks.erase(seat)
+	if started:
+		_log("%s sits down" % who.name)
+
+
+## Cash tables: after a bad hand a bot may quit; a busted one rebuys from its
+## bankroll or leaves. Someone new takes the seat either way.
+func _bot_after_hand(seat: int) -> void:
+	var s = table.seats[seat]
+	var bot: PokerBot = bots[seat]
+	var hard: bool = s.stack * 2 <= _last_stack(seat)
+	var why := ""
+	if hard and randf() < BOT_QUIT_CHANCE:
+		why = "has had enough and leaves"
+	elif s.stack == 0 and bot.bankroll < settings.stack:
+		why = "is out of chips and leaves"
+	elif s.stack == 0:
+		bot.bankroll -= settings.stack
+		s.stack = settings.stack
+		bot_stacks[seat] = s.stack
+		_log("%s rebuys" % s.name)
+	if why:
+		var gone: String = s.name
+		_log("%s %s" % [gone, why])
+		_stand(seat)
+		_add_bot(seat, gone)
 
 
 @warning_ignore("integer_division")

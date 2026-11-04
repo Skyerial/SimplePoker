@@ -126,6 +126,12 @@ Every bot combines a **personality** (how it likes to play) with a **difficulty*
 | Calling station | Loose-passive | Calls too much, rarely raises |
 | Grinder | Tight-aggressive | Solid ranges. Raises rather than calls. |
 | Maniac | Loose-aggressive | Raises constantly, bluffs a lot |
+| Nit | Ultra-tight | Waits for premium hands, almost never bluffs |
+| Trapper | Slow-player | Checks and calls big hands, then springs a raise on the river |
+| Bluffer | Tight-ish, bluff-heavy | Big bets with air |
+| Gambler | Loose, huge bets | Overbets the pot and shoves often |
+
+**Characters and moods:** each bot is a named character with a main style and 2–3 moods. Each hand it plays its main style, but sometimes switches to a random mood: 15% of hands normally, 40% when short-stacked (under 15 big blinds), 60% on tilt (lost half its stack or more last hand). There are 12 characters (`PokerBot.CHARACTERS`).
 
 **Difficulty knobs** (Novice → Pro)
 
@@ -138,7 +144,7 @@ Every bot combines a **personality** (how it likes to play) with a **difficulty*
 
 Bots never see hidden cards. They use the same information a human has. Mix per table: 2–3 archetypes, so no table is all Maniacs.
 
-When a human leaves a bot-filled table, the bot that replaces them gets a fresh stack from the house. Bots have no bankroll.
+**Coming and going (cash tables):** each bot brings 0–3 extra buy-ins as its bankroll. A busted bot rebuys from it, and leaves once it's empty. After losing half its stack or more in a hand, a bot also leaves 30% of the time. A new character takes the seat right away, so different bots cycle through the table. Difficulty comes from the table's buy-in using the venue tiers (2,000 → Novice, 50,000 → Regular, 2M+ → Pro): more Monte Carlo samples, less noise in the equity estimate and fewer mistakes as it rises.
 
 ## Multiplayer & networking
 
@@ -231,10 +237,29 @@ Every milestone ends with something playable. Milestones 1–3 are the MVP: Hold
 - [ ] Bots need much more personality, and should drop their style when a hand is an obvious loss. Still to figure out how.
 - [ ] Bots take a short "thinking" delay before acting.
 - [ ] Try LLM-driven bots to make them less predictable (and maybe give them table chat). Open: cost per decision, response time vs the turn timer, and falling back to the normal bot when the LLM is slow or unavailable. Runs on the server so API keys never ship in the game.
-- [ ] Bots get their own bankroll: they rebuy from it when busted, and once it's empty they leave and a new bot takes the seat, so different bots cycle through the table. (Replaces "bots get a fresh stack from the house" in AI bots.)
+- [x] Bots get their own bankroll: they rebuy from it when busted, and once it's empty they leave and a new bot takes the seat, so different bots cycle through the table. (Replaces "bots get a fresh stack from the house" in AI bots.)
 - [ ] Check and validate the winning logic (hand evaluation, showdown, pot and side-pot awards); it seems slightly wrong in play. Note the hands where it happens so they can become tests.
 - [ ] Show clearly who won how much and who only got uncalled chips back, and show the main pot and each side pot with their sizes on the table.
 - [ ] Session summary screen when you leave a table: your hands, what you won and lost in each, and the totals (hands played, total won, total lost, net result).
+- [ ] Make the 2D table work at any window size: either keep a fixed aspect ratio (letterbox) or scale everything with the table, so bets always sit in the right spots and no player gets cut off at the edges.
+- [ ] Make chip stacks look more natural: small random offsets per chip and stacks placed loosely instead of in a straight line.
+- [ ] Less clutter on the table: make the cards and chips a bit smaller and let players' hole cards overlap, so there's room for the D, SB and BB markers on the table.
+- [ ] Log the total pot including uncalled bets (logged before they're returned), so the log's numbers add up.
+- [ ] Bet slider moves in steps of the small blind, with a text box next to it to type an exact amount.
+- [ ] Rework the bet preset buttons: ½ Pot should set the raise to half the current pot. Right now it's current bet + ½ × (pot + call), the standard "pot-sized raise" maths, which comes out bigger than expected.
+- [ ] Order chip stacks from tallest at the back to shortest at the front, so short stacks are never hidden behind tall ones.
+- [ ] Bots size bets by their stack too, not only the pot (e.g. a short stack shoves or commits, a deep stack sizes up with strong hands).
+- [ ] Simple sound effects: cards being dealt, chips moving (bets and pot going to the winner), your turn, and winning a pot.
+- [ ] Add characters: a portrait/avatar at each seat (cartoony style). Each bot character gets its own look that matches its personality, and players pick one for themselves.
+- [ ] Update the roadmap milestones: fit these to-dos into them, and note what's already done early (e.g. bot difficulty scaling with buy-in from milestone 4).
+- [ ] Keep buy-in and blinds in proportion when creating a table: limit the buy-in to a range of big blinds (e.g. 40–100 BB, as in the venue table) or derive one from the other. Right now any buy-in can be combined with any blinds.
+- [ ] Show your bankroll balance and XP level in game (on the table HUD, not only in the lobby). Levels/XP don't exist yet (milestone 4). Also add a rebuy button.
+- [ ] Bots cash out winnings: a bot that's up on its buy-in stays at least X hands, then has a small chance each hand to leave with its stack (and a new bot takes the seat, like after a hard loss). Tune X and the chance in playtests.
+- [ ] A player joining mid-hand takes their seat right away (shown without cards, marked "waiting") and gets dealt in from the next hand. Right now they watch until the hand ends.
+- [ ] Debug toggle that shows each bot's main personality, current mood and skill level on its name plate. Offline/host only, so it can't be used to read bots in real games.
+- [ ] Replace the 2,000-chip bankroll floor (`Accounts.MIN_CHIPS`, a free top-up whenever bankroll + table stacks drop below it) with a daily claim of ~2,000 chips. Going broke then means waiting a day or buying chips with real money (see Monetization & legal before adding that). Fold the daily bonus and free bailout rows in Economy into this.
+- [ ] Figure out some form of anti-cheat. The server already deals and checks every action, and players only get their own cards, so a modified game client can't see or change much. What's left: collusion (friends sharing cards over Discord, soft-playing each other), multi-accounting to farm the free chips, and players using poker solvers or bots. Start with logs to spot it (who plays whom, chips flowing between the same accounts) before any automatic checks. Related to the chip-change log item below.
+- [ ] Decide on UDP vs TCP for the connection, since dropped packets aren't acceptable. Note: ENet runs on UDP but resends lost packets and keeps them in order for reliable messages, which is Godot's default for RPCs. So check that every RPC is reliable, and only switch to TCP (e.g. WebSocket) if there's a reason ENet can't cover, such as networks that block UDP.
 - [ ] Find a way to check if someone cheated chips into their account (e.g. a log of every chip change, so a bankroll can be traced back).
 
 ## Open questions

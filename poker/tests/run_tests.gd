@@ -11,6 +11,7 @@ func _initialize() -> void:
 	test_uncontested()
 	test_side_pots()
 	test_bot_marathon()
+	test_bots_come_and_go()
 	test_antes()
 	test_accounts()
 	test_chip_breakdown()
@@ -118,7 +119,7 @@ func test_bot_marathon() -> void:
 	var bots := []
 	for i in 6:
 		t.sit(i, "Bot%d" % i, 2000, true)
-		var b := PokerBot.new(i % 4)
+		var b := PokerBot.new(PokerBot.CHARACTERS[i], i)
 		b.samples = 20
 		b.rng.seed = i
 		bots.append(b)
@@ -128,6 +129,8 @@ func test_bot_marathon() -> void:
 			if s.stack == 0:
 				s.stack = 2000
 				chips += 2000
+		for i in 6:
+			bots[i].new_hand(t.seats[i].stack, 20, 0.6)
 		t.start_hand()
 		var steps := 0
 		while t.hand_running and steps < 200:
@@ -141,6 +144,22 @@ func test_bot_marathon() -> void:
 		if total != chips:
 			check(false, "hand %d: chips not conserved (%d != %d)" % [h, total, chips])
 			return
+
+
+func test_bots_come_and_go() -> void:
+	check(PokerBot.level_for(2000) == 0 and PokerBot.level_for(50000) == 2 and PokerBot.level_for(5000000) == 5,
+			"bot skill follows the venue buy-in tiers")
+	var room := TableRoom.new(8, 5, "Sky", {mode = "cash", bb = 20, stack = 2000, bots = 2, speed = "Normal", turn_time = 20}, null)
+	room._add_bot(0)
+	room._add_bot(1)
+	check(room.table.seats[0].name != room.table.seats[1].name, "bots at a table have different names")
+	var old: String = room.table.seats[0].name
+	room.bots[0].bankroll = 0
+	room.table.seats[0].stack = 0
+	room._bot_after_hand(0)
+	check(room.table.seats[0].name != old and room.table.seats[0].stack == 2000,
+			"a busted bot with no bankroll leaves and someone new sits down")
+	room.free()
 
 
 func test_antes() -> void:
@@ -192,6 +211,11 @@ func test_accounts() -> void:
 	var b := Accounts.new(ACCOUNTS_FILE)
 	check(b.chips("Sky") == 6500, "after a crash the table stack goes back to the bankroll")
 	check(b.login("Sky", "secret1") == "", "accounts survive a restart")
+	b.set_stack("Sky", "1", 0)
+	b.buy_in("Sky", "1", 6500)
+	b.set_stack("Sky", "1", 0)
+	b.settle("Sky", "1")
+	check(b.chips("Sky") == Accounts.MIN_CHIPS, "a broke player is topped up to the minimum: got %d" % b.chips("Sky"))
 	DirAccess.remove_absolute(ACCOUNTS_FILE)
 
 
